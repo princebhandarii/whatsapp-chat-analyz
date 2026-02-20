@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import re
 import pickle
+import os
+import gdown
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 from tensorflow.keras.models import load_model
@@ -12,10 +14,23 @@ st.set_page_config(page_title="WhatsApp Chat Analyzer", layout="wide")
 
 st.title("📊 WhatsApp Chat Analyzer with Emotion Detection")
 
-# Load saved model
+# ---------------- DOWNLOAD MODEL ONLY ----------------
+
+MODEL_URL = "https://drive.google.com/uc?id=1ZiN0mS7pptf2ksVR25acWf5OTo5gEG2n"
+
+
+def download_model():
+    if not os.path.exists("emotion_model.keras"):
+        st.info("Downloading ML model... please wait ⏳")
+        gdown.download(MODEL_URL, "emotion_model.keras", quiet=False)
+
+download_model()
+
+# ---------------- LOAD FILES ----------------
+
 @st.cache_resource
 def load_saved():
-    model = load_model("emotion_model.h5")
+    model = load_model("emotion_model.keras")
 
     with open("tokenizer.pkl", "rb") as f:
         tokenizer = pickle.load(f)
@@ -26,51 +41,3 @@ def load_saved():
     return model, tokenizer, label_encoder
 
 model, tokenizer, label_encoder = load_saved()
-
-
-# File upload
-uploaded_file = st.file_uploader("Upload WhatsApp Chat (.txt)", type=["txt"])
-
-if uploaded_file:
-
-    chat = uploaded_file.read().decode("utf-8")
-
-    pattern = r'\[(\d{1,2}/\d{1,2}/\d{2}),\s(\d{1,2}:\d{2}:\d{2}\s?[APMapm\.]+)\]\s([^:]+):\s(.*)'
-    messages = re.findall(pattern, chat)
-
-    df = pd.DataFrame(messages, columns=['Date', 'Time', 'User', 'Message'])
-
-    st.subheader("📌 Basic Statistics")
-    col1, col2 = st.columns(2)
-
-    col1.metric("Total Messages", len(df))
-    col2.metric("Total Users", df['User'].nunique())
-
-    st.subheader("👤 Top Active Users")
-    st.bar_chart(df['User'].value_counts())
-
-    # Wordcloud
-    st.subheader("☁️ Word Cloud")
-    text = " ".join(df['Message'].dropna().astype(str))
-    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
-
-    fig, ax = plt.subplots()
-    ax.imshow(wordcloud)
-    ax.axis("off")
-    st.pyplot(fig)
-
-    # Emotion Prediction
-    st.subheader("😊 Emotion Analysis")
-
-    def predict_emotion(text):
-        seq = tokenizer.texts_to_sequences([text])
-        padded = pad_sequences(seq, maxlen=40)
-        pred = model.predict(padded, verbose=0)
-        return label_encoder.inverse_transform([np.argmax(pred)])[0]
-
-    df['Predicted_Emotion'] = df['Message'].astype(str).apply(predict_emotion)
-
-    st.bar_chart(df['Predicted_Emotion'].value_counts())
-
-    st.subheader("📄 Preview Data")
-    st.dataframe(df.head())
