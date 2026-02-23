@@ -1,7 +1,7 @@
-streamlit
-pandas
-numpy
-matplotlib
-wordcloud
-tensorflow==2.15.0
+streamlit 
+pandas 
+numpy 
+matplotlib 
+wordcloud 
+tensorflow 
 scikit-learn
