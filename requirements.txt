@@ -3,6 +3,5 @@ pandas
 numpy
 matplotlib
 wordcloud
-tensorflow
+tensorflow==2.15.0
 scikit-learn
-gdown
