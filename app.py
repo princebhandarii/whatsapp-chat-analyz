@@ -1,20 +1,17 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import re
+import pandas as pd
 import pickle
-import matplotlib.pyplot as plt
-from wordcloud import WordCloud
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
 
-st.set_page_config(page_title="WhatsApp Chat Analyzer", layout="wide")
-st.title("📊 WhatsApp Chat Analyzer with Emotion Detection")
-
-# ---------------- LOAD FILES ----------------
+# ---------------- LOAD MODEL ----------------
 @st.cache_resource
-def load_saved():
-    model = load_model("emotion_model.keras")
+def load_model_files():
+    model = tf.keras.models.load_model("emotion_model.keras")
 
     with open("tokenizer.pkl", "rb") as f:
         tokenizer = pickle.load(f)
@@ -24,72 +21,89 @@ def load_saved():
 
     return model, tokenizer, label_encoder
 
-model, tokenizer, label_encoder = load_saved()
+model, tokenizer, label_encoder = load_model_files()
 
-# ---------------- FILE UPLOAD ----------------
-uploaded_file = st.file_uploader("Upload WhatsApp Chat (.txt)", type=["txt"])
+# ---------------- PAGE UI ----------------
+st.set_page_config(page_title="Chat Emotion Analyzer", page_icon="💬", layout="wide")
 
-def parse_chat(data):
-    pattern = r"(\d{1,2}/\d{1,2}/\d{2,4}), (\d{1,2}:\d{2}.*?) - (.*?): (.*)"
+st.title("💬 Chat Emotion Analyzer")
+st.write("Upload your WhatsApp / Chat .txt file and AI will analyze emotions!")
+
+uploaded_file = st.file_uploader("Upload chat file (.txt)", type=["txt"])
+
+
+# ---------------- FUNCTION: CLEAN CHAT ----------------
+def extract_messages(chat_text):
+    lines = chat_text.split("\n")
     messages = []
 
-    for line in data.split("\n"):
-        match = re.match(pattern, line)
+    for line in lines:
+        # WhatsApp format: 12/12/23, 10:32 PM - Name: message
+        match = re.search(r" - .*?: (.*)", line)
         if match:
-            date, time, user, message = match.groups()
-            messages.append([date, time, user, message])
+            msg = match.group(1)
+            if len(msg) > 2:
+                messages.append(msg)
 
-    df = pd.DataFrame(messages, columns=["Date","Time","User","Message"])
+    return messages
+
+
+# ---------------- PREDICT FUNCTION ----------------
+def predict_emotions(messages):
+    results = []
+
+    for text in messages:
+        seq = tokenizer.texts_to_sequences([text])
+        padded = pad_sequences(seq, maxlen=100, padding='post', truncating='post')
+
+        prediction = model.predict(padded, verbose=0)
+
+        idx = np.argmax(prediction)
+        emotion = label_encoder.inverse_transform([idx])[0]
+        confidence = float(np.max(prediction))
+
+        results.append((text, emotion, confidence))
+
+    df = pd.DataFrame(results, columns=["Message", "Emotion", "Confidence"])
     return df
 
-# ---------------- CLEANING ----------------
-
-def clean_text(text):
-    text = text.lower()
-    text = re.sub(r"http\S+", "", text)
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-# ---------------- PREDICTION ----------------
-MAX_LEN = 50
-
-def predict_emotion(texts):
-    cleaned = [clean_text(t) for t in texts]
-    seq = tokenizer.texts_to_sequences(cleaned)
-    padded = pad_sequences(seq, maxlen=MAX_LEN)
-
-    preds = model.predict(padded, verbose=0)
-    labels = label_encoder.inverse_transform(np.argmax(preds, axis=1))
-
-    return labels
 
 # ---------------- MAIN APP ----------------
 if uploaded_file:
-    raw_text = uploaded_file.read().decode("utf-8")
-    df = parse_chat(raw_text)
 
-    st.subheader("Chat Preview")
-    st.dataframe(df.head())
+    chat_data = uploaded_file.read().decode("utf-8")
+    messages = extract_messages(chat_data)
 
-    st.subheader("Total Messages")
-    st.write(len(df))
+    st.success(f"Found {len(messages)} messages")
 
-    st.subheader("Most Active Users")
-    st.bar_chart(df["User"].value_counts())
+    if st.button("Analyze Chat"):
 
-    st.subheader("Word Cloud")
-    text = " ".join(df["Message"])
-    wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        with st.spinner("AI is analyzing emotions..."):
+            df = predict_emotions(messages)
 
-    fig, ax = plt.subplots()
-    ax.imshow(wc)
-    ax.axis("off")
-    st.pyplot(fig)
+        st.subheader("📊 Emotion Distribution")
 
-    st.subheader("Emotion Detection")
-    df["Emotion"] = predict_emotion(df["Message"].astype(str))
-    st.dataframe(df[["User","Message","Emotion"]].head(20))
+        col1, col2 = st.columns(2)
 
-    st.subheader("Emotion Distribution")
-    st.bar_chart(df["Emotion"].value_counts())
+        # Pie Chart
+        with col1:
+            emotion_counts = df["Emotion"].value_counts()
+            fig1, ax1 = plt.subplots()
+            ax1.pie(emotion_counts, labels=emotion_counts.index, autopct='%1.1f%%')
+            ax1.axis('equal')
+            st.pyplot(fig1)
+
+        # Bar Chart
+        with col2:
+            fig2, ax2 = plt.subplots()
+            sns.countplot(data=df, x="Emotion", order=emotion_counts.index)
+            plt.xticks(rotation=45)
+            st.pyplot(fig2)
+
+        st.subheader("🔥 Most Emotional Messages")
+
+        top_msgs = df.sort_values("Confidence", ascending=False).head(10)
+        st.dataframe(top_msgs)
+
+        st.subheader("📝 Full Chat Analysis")
+        st.dataframe(df)
