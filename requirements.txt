@@ -1,7 +1,7 @@
-streamlit 
-pandas 
-numpy 
-matplotlib 
-wordcloud 
-tensorflow 
+streamlit
+tensorflow
+numpy
 scikit-learn
+pandas
+pickle-mixin
+keras
