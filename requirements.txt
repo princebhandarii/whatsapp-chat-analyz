@@ -1,7 +1,8 @@
 streamlit
 tensorflow
 numpy
-scikit-learn
 pandas
+scikit-learn
 pickle-mixin
-keras
+matplotlib
+seaborn
